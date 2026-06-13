@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🛍️ ShopTH</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Sarabun',sans-serif}</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  // ─── FIREBASE CONFIG ───────────────────────────────────────────────────────
+  firebase.initializeApp({
+    databaseURL: "https://shopth-3d3c9-default-rtdb.asia-southeast1.firebasedatabase.app"
+  });
+  const db = firebase.database();
+</script>
+<script type="text/babel">
+const { useState, useReducer, useEffect } = React;
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const ADMIN_ACCOUNT = { id:0, email:"Yingsirirat", password:"190939", name:"แอดมิน", role:"admin" };
+
+const INITIAL_PRODUCTS = [
+  // ── ของใช้ในชีวิตประจำวัน ──
+  { id:1,  name:"ผงซักฝอก",        price:89,  category:"ของใช้ในชีวิตประจำวัน", stock:100, image:"🧺", desc:"สะอาดหมดจด กลิ่นหอม" },
+  { id:2,  name:"น้ำยาปรับผ้านุ่ม", price:65,  category:"ของใช้ในชีวิตประจำวัน", stock:80,  image:"🧴", desc:"ผ้านุ่มน่าสวมใส่" },
+  { id:3,  name:"สบู่",             price:29,  category:"ของใช้ในชีวิตประจำวัน", stock:120, image:"🧼", desc:"อ่อนโยนต่อผิว" },
+  { id:4,  name:"ยาสีฟัน",          price:49,  category:"ของใช้ในชีวิตประจำวัน", stock:90,  image:"🪥", desc:"ฟันขาว ลมหายใจสดชื่น" },
+  // ── เครื่องปรุงรส ──
+  { id:5,  name:"น้ำปลา",           price:35,  category:"เครื่องปรุงรส", stock:150, image:"🍶", desc:"รสชาติกลมกล่อม" },
+  { id:6,  name:"รสดี",             price:25,  category:"เครื่องปรุงรส", stock:200, image:"🧂", desc:"ปรุงรสอาหารได้ทุกเมนู" },
+  { id:7,  name:"น้ำตาล",           price:30,  category:"เครื่องปรุงรส", stock:180, image:"🍬", desc:"น้ำตาลทรายขาวบริสุทธิ์" },
+  { id:8,  name:"น้ำมันพืช",        price:55,  category:"เครื่องปรุงรส", stock:100, image:"🫙", desc:"ดีต่อสุขภาพ ไม่อิ่มตัว" },
+  // ── เครื่องดื่มชูกำลัง ──
+  { id:9,  name:"กาแฟซอง",          price:15,  category:"เครื่องดื่มชูกำลัง", stock:300, image:"☕", desc:"กาแฟสำเร็จรูป 3in1" },
+  { id:10, name:"กาแฟกระป๋อง",      price:20,  category:"เครื่องดื่มชูกำลัง", stock:150, image:"🥫", desc:"พร้อมดื่ม เย็นชื่นใจ" },
+  { id:11, name:"สปอนเซอร์",        price:12,  category:"เครื่องดื่มชูกำลัง", stock:200, image:"⚡", desc:"เพิ่มพลังงาน คืนความสดชื่น" },
+  { id:12, name:"M150",              price:12,  category:"เครื่องดื่มชูกำลัง", stock:200, image:"💪", desc:"ชูกำลัง บำรุงร่างกาย" },
+];
+
+const STATUSES = ["รอดำเนินการ","กำลังจัดส่ง","จัดส่งแล้ว","ยกเลิก"];
+const STATUS_COLOR = {"รอดำเนินการ":"#f5a623","กำลังจัดส่ง":"#3182ce","จัดส่งแล้ว":"#38a169","ยกเลิก":"#e53e3e"};
+const STATUS_BG    = {"รอดำเนินการ":"#fffbf0","กำลังจัดส่ง":"#ebf8ff","จัดส่งแล้ว":"#f0fff4","ยกเลิก":"#fff5f5"};
+
+// ─── CART REDUCER ─────────────────────────────────────────────────────────────
+function cartReducer(state,action){
+  switch(action.type){
+    case"ADD":{const ex=state.find(i=>i.id===action.product.id);if(ex)return state.map(i=>i.id===action.product.id?{...i,qty:i.qty+1}:i);return[...state,{...action.product,qty:1}];}
+    case"REMOVE":return state.filter(i=>i.id!==action.id);
+    case"UPDATE_QTY":return state.map(i=>i.id===action.id?{...i,qty:Math.max(1,action.qty)}:i);
+    case"CLEAR":return[];
+    default:return state;
+  }
+}
+
+// ─── STYLES ───────────────────────────────────────────────────────────────────
+const S={
+  app:{fontFamily:"'Sarabun',sans-serif",minHeight:"100vh",background:"#f3f4f8",color:"#1a1a1a"},
+  nav:{background:"#1a1a2e",padding:"0 16px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56,position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 12px rgba(0,0,0,.3)"},
+  navLogo:{color:"#e94560",fontWeight:800,fontSize:20},
+  navRight:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"},
+  navBtn:{background:"transparent",border:"1.5px solid #e94560",color:"#e94560",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"inherit"},
+  navBtnFill:{background:"#e94560",border:"none",color:"#fff",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"inherit",fontWeight:600},
+  navName:{color:"#a0aec0",fontSize:12,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},
+  cartWrap:{position:"relative",display:"inline-flex"},
+  badge:{position:"absolute",top:-6,right:-6,background:"#f5a623",color:"#fff",borderRadius:"50%",fontSize:10,width:17,height:17,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700},
+  authWrap:{minHeight:"100vh",background:"linear-gradient(135deg,#1a1a2e,#0f3460)",display:"flex",alignItems:"center",justifyContent:"center",padding:16},
+  authCard:{background:"#fff",borderRadius:18,padding:"32px 28px 24px",width:"100%",maxWidth:380,boxShadow:"0 12px 40px rgba(0,0,0,.3)"},
+  authLogo:{textAlign:"center",fontSize:26,fontWeight:800,color:"#e94560",marginBottom:4},
+  authSub:{textAlign:"center",color:"#888",fontSize:13,marginBottom:22},
+  tabRow2:{display:"flex",borderRadius:10,overflow:"hidden",border:"1.5px solid #e94560",marginBottom:22},
+  tab2:(a)=>({flex:1,padding:"9px 0",textAlign:"center",cursor:"pointer",fontWeight:700,fontSize:14,background:a?"#e94560":"transparent",color:a?"#fff":"#e94560",border:"none",fontFamily:"inherit"}),
+  label:{fontSize:12,color:"#555",fontWeight:600,marginBottom:4,display:"block"},
+  input:{width:"100%",padding:"10px 13px",borderRadius:8,border:"1.5px solid #ddd",fontSize:14,fontFamily:"inherit",marginBottom:11,boxSizing:"border-box",outline:"none"},
+  primaryBtn:{width:"100%",background:"#e94560",color:"#fff",border:"none",borderRadius:10,padding:12,fontWeight:700,fontSize:15,cursor:"pointer",fontFamily:"inherit",marginTop:4},
+  errorBox:{background:"#fff5f5",border:"1px solid #fcc",borderRadius:8,padding:"8px 12px",color:"#c53030",fontSize:13,marginBottom:11},
+  successBox:{background:"#f0fff4",border:"1px solid #9ae6b4",borderRadius:8,padding:"8px 12px",color:"#276749",fontSize:13,marginBottom:11},
+  hint:{background:"#f8f7f4",borderRadius:8,padding:"10px 13px",fontSize:12,color:"#777",marginTop:13,lineHeight:1.7},
+  main:{maxWidth:1200,margin:"0 auto",padding:"20px 14px"},
+  hero:{background:"linear-gradient(135deg,#1a1a2e,#0f3460)",borderRadius:14,padding:"32px 24px",marginBottom:28,color:"#fff",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12},
+  heroTag:{background:"#e94560",display:"inline-block",borderRadius:4,padding:"3px 10px",fontSize:11,marginBottom:8},
+  heroH1:{fontSize:28,fontWeight:800,margin:"0 0 6px",lineHeight:1.2},
+  heroSub:{color:"#a0aec0",margin:0,fontSize:13},
+  heroEmoji:{fontSize:64},
+  filterRow:{display:"flex",gap:7,flexWrap:"wrap",marginBottom:20},
+  filterBtn:(a)=>({background:a?"#e94560":"#fff",color:a?"#fff":"#555",border:"1.5px solid "+(a?"#e94560":"#ddd"),borderRadius:20,padding:"5px 14px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}),
+  grid:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:14},
+  card:{background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.07)"},
+  cardImg:{background:"#f0f0f0",height:120,display:"flex",alignItems:"center",justifyContent:"center",fontSize:52},
+  cardBody:{padding:"12px 13px 13px"},
+  cardCat:{fontSize:10,color:"#e94560",fontWeight:600,textTransform:"uppercase",letterSpacing:.5,marginBottom:3},
+  cardName:{fontWeight:700,fontSize:14,marginBottom:3},
+  cardDesc:{color:"#777",fontSize:11,marginBottom:8},
+  cardFoot:{display:"flex",alignItems:"center",justifyContent:"space-between"},
+  cardPrice:{fontWeight:800,fontSize:16,color:"#1a1a2e"},
+  addBtn:{background:"#e94560",color:"#fff",border:"none",borderRadius:7,padding:"6px 11px",cursor:"pointer",fontSize:12,fontFamily:"inherit",fontWeight:600},
+  stockBadge:(ok)=>({fontSize:10,color:ok?"#38a169":"#e53e3e",background:ok?"#f0fff4":"#fff5f5",borderRadius:4,padding:"2px 6px"}),
+  panel:{position:"fixed",top:0,right:0,bottom:0,width:"min(340px,100vw)",background:"#fff",boxShadow:"-4px 0 24px rgba(0,0,0,.15)",zIndex:200,display:"flex",flexDirection:"column",transform:"translateX(100%)",transition:"transform .3s"},
+  panelOpen:{transform:"translateX(0)"},
+  panelHead:{background:"#1a1a2e",color:"#fff",padding:"16px 18px",display:"flex",justifyContent:"space-between",alignItems:"center"},
+  panelBody:{flex:1,overflowY:"auto",padding:16},
+  panelFoot:{padding:16,borderTop:"1px solid #f0f0f0",background:"#fafafa"},
+  cartItem:{display:"flex",gap:10,alignItems:"center",padding:"10px 0",borderBottom:"1px solid #f5f5f5"},
+  cartEmoji:{fontSize:32,flexShrink:0},
+  cartInfo:{flex:1},
+  cartName:{fontWeight:600,fontSize:13,marginBottom:2},
+  cartPrice:{color:"#e94560",fontWeight:700,fontSize:12},
+  qtyBox:{display:"flex",alignItems:"center",gap:5,marginTop:5},
+  qtyBtn:{width:22,height:22,borderRadius:6,border:"1.5px solid #ddd",background:"#fff",cursor:"pointer",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13},
+  qtyNum:{width:28,textAlign:"center",fontWeight:600,fontSize:13},
+  removeBtn:{background:"transparent",border:"none",color:"#ccc",cursor:"pointer",fontSize:16,padding:3},
+  summaryRow:{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:13},
+  summaryTotal:{display:"flex",justifyContent:"space-between",fontWeight:800,fontSize:17,marginTop:9,paddingTop:9,borderTop:"2px solid #1a1a2e"},
+  checkoutBtn:{width:"100%",background:"#e94560",color:"#fff",border:"none",borderRadius:9,padding:"13px",cursor:"pointer",fontWeight:700,fontSize:15,fontFamily:"inherit",marginTop:10},
+  emptyCart:{textAlign:"center",padding:"50px 16px",color:"#aaa"},
+  adminWrap:{maxWidth:1200,margin:"0 auto",padding:"20px 14px"},
+  adminTitle:{fontSize:22,fontWeight:800,marginBottom:18},
+  tabRow:{display:"flex",marginBottom:20,background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.07)"},
+  tab:(a)=>({flex:1,padding:"11px 0",textAlign:"center",cursor:"pointer",fontWeight:600,fontSize:13,background:a?"#e94560":"transparent",color:a?"#fff":"#555",border:"none",fontFamily:"inherit"}),
+  statGrid:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:12,marginBottom:20},
+  statCard:{background:"#fff",borderRadius:11,padding:"16px 17px",boxShadow:"0 2px 8px rgba(0,0,0,.07)"},
+  statNum:{fontSize:26,fontWeight:800,color:"#e94560"},
+  statLabel:{fontSize:11,color:"#888",marginTop:3},
+  table:{width:"100%",borderCollapse:"collapse",background:"#fff",borderRadius:11,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.07)"},
+  th:{background:"#1a1a2e",color:"#fff",padding:"11px 13px",textAlign:"left",fontSize:12,fontWeight:600},
+  td:{padding:"10px 13px",borderBottom:"1px solid #f5f5f5",fontSize:13,verticalAlign:"top"},
+  btn:(c)=>({background:c,color:"#fff",border:"none",borderRadius:6,padding:"5px 11px",cursor:"pointer",fontSize:11,fontFamily:"inherit",marginRight:3,marginBottom:2}),
+  statusBadge:(s)=>({background:STATUS_BG[s]||"#f5f5f5",color:STATUS_COLOR[s]||"#555",border:`1px solid ${STATUS_COLOR[s]||"#ddd"}`,borderRadius:20,padding:"3px 9px",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}),
+  searchBar:{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"},
+  searchInput:{padding:"8px 13px",borderRadius:8,border:"1.5px solid #ddd",fontSize:13,fontFamily:"inherit",outline:"none",flex:1,minWidth:180},
+  select:{padding:"7px 11px",borderRadius:8,border:"1.5px solid #ddd",fontSize:12,fontFamily:"inherit",background:"#fff",cursor:"pointer"},
+  overlay:{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:14},
+  modal:{background:"#fff",borderRadius:14,padding:24,width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto"},
+  modalHead:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,borderBottom:"1px solid #f0f0f0",paddingBottom:12},
+  modalTitle:{fontWeight:800,fontSize:17},
+  closeBtn:{background:"#f0f0f0",border:"none",borderRadius:8,width:30,height:30,cursor:"pointer",fontSize:17,display:"flex",alignItems:"center",justifyContent:"center"},
+  modalRow:{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f9f9f9",fontSize:13},
+  orderItem:{display:"flex",gap:9,alignItems:"center",padding:"7px 0",borderBottom:"1px solid #f5f5f5"},
+  pageRow:{display:"flex",gap:5,alignItems:"center",justifyContent:"center",marginTop:16,flexWrap:"wrap"},
+  pageBtn:(a)=>({background:a?"#e94560":"#fff",color:a?"#fff":"#555",border:"1.5px solid "+(a?"#e94560":"#ddd"),borderRadius:7,padding:"5px 10px",cursor:"pointer",fontSize:12,fontFamily:"inherit",minWidth:32}),
+  newOrderBadge:{background:"#e94560",color:"#fff",borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:700,marginLeft:6},
+};
+
+// ─── AUTH ──────────────────────────────────────────────────────────────────────
+function AuthPage({onLogin}){
+  const[mode,setMode]=useState("login");
+  const[lEmail,setLEmail]=useState(""),[ lPass,setLPass]=useState(""),[ lErr,setLErr]=useState("");
+  const[rName,setRName]=useState(""),[ rEmail,setREmail]=useState(""),[ rPass,setRPass]=useState("");
+  const[rPass2,setRPass2]=useState(""),[ rPhone,setRPhone]=useState(""),[ rErr,setRErr]=useState(""),[ rOk,setROk]=useState("");
+
+  function handleLogin(){
+    if(lEmail===ADMIN_ACCOUNT.email&&lPass===ADMIN_ACCOUNT.password){onLogin(ADMIN_ACCOUNT);return;}
+    // check Firebase users
+    db.ref("users").orderByChild("email").equalTo(lEmail).once("value",snap=>{
+      let found=null;
+      snap.forEach(c=>{const u=c.val();if(u.password===lPass)found={...u,uid:c.key};});
+      if(!found){setLErr("อีเมลหรือรหัสผ่านไม่ถูกต้อง");return;}
+      setLErr("");onLogin(found);
+    });
+  }
+
+  function handleRegister(){
+    if(!rName.trim()){setRErr("กรุณากรอกชื่อ-นามสกุล");return;}
+    if(!rEmail.includes("@")){setRErr("รูปแบบอีเมลไม่ถูกต้อง");return;}
+    if(rPass.length<6){setRErr("รหัสผ่านต้องมีอย่างน้อย 6 ตัว");return;}
+    if(rPass!==rPass2){setRErr("รหัสผ่านไม่ตรงกัน");return;}
+    // check duplicate email
+    db.ref("users").orderByChild("email").equalTo(rEmail).once("value",snap=>{
+      if(snap.exists()){setRErr("อีเมลนี้ถูกใช้งานแล้ว");return;}
+      const newRef=db.ref("users").push();
+      newRef.set({name:rName.trim(),email:rEmail.trim(),password:rPass,phone:rPhone,role:"customer",
+        joinDate:new Date().toLocaleDateString("th-TH")});
+      setROk("สมัครสำเร็จ! กำลังพาไปหน้าล็อกอิน...");
+      setTimeout(()=>{setMode("login");setLEmail(rEmail);setROk("");},1400);
+    });
+  }
+
+  return(
+    <div style={S.authWrap}>
+      <div style={S.authCard}>
+        <div style={S.authLogo}>🛍️ ShopTH</div>
+        <div style={S.authSub}>ร้านค้าออนไลน์ครบวงจร</div>
+        <div style={S.tabRow2}>
+          <button style={S.tab2(mode==="login")} onClick={()=>{setMode("login");setLErr("");setRErr("");}}>เข้าสู่ระบบ</button>
+          <button style={S.tab2(mode==="register")} onClick={()=>{setMode("register");setLErr("");setRErr("");}}>สมัครสมาชิก</button>
+        </div>
+        {mode==="login"&&<>
+          {lErr&&<div style={S.errorBox}>⚠️ {lErr}</div>}
+          <label style={S.label}>อีเมล</label>
+          <input style={S.input} placeholder="example@email.com" value={lEmail} onChange={e=>setLEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
+          <label style={S.label}>รหัสผ่าน</label>
+          <input style={S.input} type="password" placeholder="••••••" value={lPass} onChange={e=>setLPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
+          <button style={S.primaryBtn} onClick={handleLogin}>เข้าสู่ระบบ</button>
+          
+        </>}
+        {mode==="register"&&<>
+          {rErr&&<div style={S.errorBox}>⚠️ {rErr}</div>}
+          {rOk&&<div style={S.successBox}>✅ {rOk}</div>}
+          <label style={S.label}>ชื่อ-นามสกุล *</label>
+          <input style={S.input} placeholder="สมชาย ใจดี" value={rName} onChange={e=>setRName(e.target.value)}/>
+          <label style={S.label}>อีเมล *</label>
+          <input style={S.input} placeholder="example@email.com" value={rEmail} onChange={e=>setREmail(e.target.value)}/>
+          <label style={S.label}>เบอร์โทรศัพท์</label>
+          <input style={S.input} placeholder="08x-xxx-xxxx" value={rPhone} onChange={e=>setRPhone(e.target.value)}/>
+          <label style={S.label}>รหัสผ่าน * (อย่างน้อย 6 ตัว)</label>
+          <input style={S.input} type="password" placeholder="••••••" value={rPass} onChange={e=>setRPass(e.target.value)}/>
+          <label style={S.label}>ยืนยันรหัสผ่าน *</label>
+          <input style={S.input} type="password" placeholder="••••••" value={rPass2} onChange={e=>setRPass2(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleRegister()}/>
+          <button style={S.primaryBtn} onClick={handleRegister}>สมัครสมาชิก</button>
+        </>}
+      </div>
+    </div>
+  );
+}
+
+// ─── NAVBAR ───────────────────────────────────────────────────────────────────
+function Navbar({user,cartCount,onCartToggle,onLogout,onGoAdmin,onGoShop,onGoHistory,view,newOrders,totalSpent}){
+  return(
+    <nav style={S.nav}>
+      <div style={S.navLogo}>🛍️ ShopTH</div>
+      <div style={S.navRight}>
+        {user.role==="admin"&&<>
+          <button style={S.navBtn} onClick={onGoShop} disabled={view==="shop"}>🏪 ร้านค้า</button>
+          <button style={{...S.navBtn,position:"relative"}} onClick={onGoAdmin} disabled={view==="admin"}>
+            ⚙️ แอดมิน{newOrders>0&&<span style={S.newOrderBadge}>{newOrders}</span>}
+          </button>
+        </>}
+        {user.role==="customer"&&<>
+          <div style={S.cartWrap}>
+            <button style={S.navBtnFill} onClick={onCartToggle}>🛒 ตะกร้า</button>
+            {cartCount>0&&<span style={S.badge}>{cartCount}</span>}
+          </div>
+          <button style={S.navBtn} onClick={onGoHistory}>📋 ออเดอร์</button>
+        </>}
+        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end"}}>
+          <span style={S.navName}>👋 {user.name}</span>
+          {user.role==="customer"&&totalSpent>0&&<span style={{color:"#f5a623",fontSize:10,fontWeight:700}}>฿{totalSpent.toLocaleString()} สะสม</span>}
+        </div>
+        <button style={S.navBtn} onClick={onLogout}>ออก</button>
+      </div>
+    </nav>
+  );
+}
+
+// ─── SHOP ─────────────────────────────────────────────────────────────────────
+function ShopView({products,cart,dispatch,cartOpen,setCartOpen,user,onOrderPlaced}){
+  const[filter,setFilter]=useState("ทั้งหมด");
+  const[success,setSuccess]=useState(false);
+  const cats=["ทั้งหมด",...Array.from(new Set(products.map(p=>p.category)))];
+  const filtered=filter==="ทั้งหมด"?products:products.filter(p=>p.category===filter);
+  const totalQty=cart.reduce((s,i)=>s+i.qty,0);
+  const totalPrice=cart.reduce((s,i)=>s+i.qty*i.price,0);
+
+  function handleCheckout(){
+    const order={
+      userId:user.id||user.uid||"guest",
+      userName:user.name,
+      items:cart.map(i=>({id:i.id,name:i.name,price:i.price,qty:i.qty,image:i.image})),
+      total:totalPrice,
+      status:"รอดำเนินการ",
+      date:new Date().toLocaleDateString("th-TH",{day:"2-digit",month:"short",year:"numeric"})+" "+new Date().toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"}),
+      createdAt: Date.now()
+    };
+    // บันทึกลง Firebase
+    db.ref("orders").push(order).then(()=>{
+      dispatch({type:"CLEAR"});setCartOpen(false);setSuccess(true);
+      if(onOrderPlaced)onOrderPlaced();
+    });
+  }
+
+  return(<>
+    <div style={S.main}>
+      <div style={S.hero}>
+        <div>
+          <div style={S.heroTag}>NEW ARRIVAL</div>
+          <h1 style={S.heroH1}>สินค้าคุณภาพดี<br/>ราคาสบายกระเป๋า</h1>
+          <p style={S.heroSub}>ของดี มีคุณภาพ ส่งไวทั่วไทย</p>
+        </div>
+        <div style={S.heroEmoji}>🛍️</div>
+      </div>
+      <div style={S.filterRow}>{cats.map(c=><button key={c} style={S.filterBtn(filter===c)} onClick={()=>setFilter(c)}>{c}</button>)}</div>
+      <div style={S.grid}>
+        {filtered.map(p=>(
+          <div key={p.id} style={S.card}>
+            <div style={S.cardImg}>{p.image}</div>
+            <div style={S.cardBody}>
+              <div style={S.cardCat}>{p.category}</div>
+              <div style={S.cardName}>{p.name}</div>
+              <div style={S.cardDesc}>{p.desc}</div>
+              <div style={S.cardFoot}>
+                <div><div style={S.cardPrice}>฿{p.price.toLocaleString()}</div>
+                  <span style={S.stockBadge(p.stock>0)}>{p.stock>0?`เหลือ ${p.stock}`:"หมด"}</span></div>
+                <button style={{...S.addBtn,opacity:p.stock===0?.4:1}} disabled={p.stock===0} onClick={()=>dispatch({type:"ADD",product:p})}>+ ใส่ตะกร้า</button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+    {/* CART */}
+    <div style={{...S.panel,...(cartOpen?S.panelOpen:{})}}>
+      <div style={S.panelHead}>
+        <span style={{fontWeight:700,fontSize:16}}>🛒 ตะกร้าสินค้า</span>
+        <span style={{color:"#a0aec0",fontSize:12}}>{totalQty} ชิ้น</span>
+      </div>
+      <div style={S.panelBody}>
+        {cart.length===0?<div style={S.emptyCart}><div style={{fontSize:44}}>🛒</div><div style={{marginTop:10}}>ยังไม่มีสินค้า</div></div>
+          :cart.map(item=>(
+            <div key={item.id} style={S.cartItem}>
+              <div style={S.cartEmoji}>{item.image}</div>
+              <div style={S.cartInfo}>
+                <div style={S.cartName}>{item.name}</div>
+                <div style={S.cartPrice}>฿{(item.price*item.qty).toLocaleString()}</div>
+                <div style={S.qtyBox}>
+                  <button style={S.qtyBtn} onClick={()=>dispatch({type:"UPDATE_QTY",id:item.id,qty:item.qty-1})}>−</button>
+                  <span style={S.qtyNum}>{item.qty}</span>
+                  <button style={S.qtyBtn} onClick={()=>dispatch({type:"UPDATE_QTY",id:item.id,qty:item.qty+1})}>+</button>
+                </div>
+              </div>
+              <button style={S.removeBtn} onClick={()=>dispatch({type:"REMOVE",id:item.id})}>✕</button>
+            </div>
+          ))}
+      </div>
+      {cart.length>0&&<div style={S.panelFoot}>
+        <div style={S.summaryRow}><span>จำนวนทั้งหมด</span><span style={{fontWeight:700}}>{totalQty} ชิ้น</span></div>
+        <div style={S.summaryRow}><span>ค่าจัดส่ง</span><span style={{color:"#38a169",fontWeight:700}}>ฟรี 🎉</span></div>
+        <div style={S.summaryTotal}><span>ยอดรวม</span><span style={{color:"#e94560"}}>฿{totalPrice.toLocaleString()}</span></div>
+        <button style={S.checkoutBtn} onClick={handleCheckout}>สั่งซื้อเลย →</button>
+        <button style={{...S.checkoutBtn,background:"#f0f0f0",color:"#555",marginTop:8}} onClick={()=>dispatch({type:"CLEAR"})}>ล้างตะกร้า</button>
+      </div>}
+    </div>
+    {cartOpen&&<div style={{position:"fixed",inset:0,zIndex:150}} onClick={()=>setCartOpen(false)}/>}
+    {success&&<div style={S.overlay}><div style={{...S.modal,textAlign:"center"}}>
+      <div style={{fontSize:52,marginBottom:10}}>🎉</div>
+      <div style={{fontSize:20,fontWeight:800,marginBottom:7}}>สั่งซื้อสำเร็จ!</div>
+      <div style={{color:"#666",fontSize:13,marginBottom:18}}>ขอบคุณที่ช้อปกับ ShopTH<br/>จัดส่งภายใน 1-3 วันทำการ</div>
+      <button style={{...S.primaryBtn,marginTop:0}} onClick={()=>setSuccess(false)}>ช้อปต่อ</button>
+    </div></div>}
+  </>);
+}
+
+// ─── ORDER MODAL ──────────────────────────────────────────────────────────────
+function OrderModal({order,onClose}){
+  const[status,setStatus]=useState(order?.status||"");
+  useEffect(()=>{if(order)setStatus(order.status);},[order]);
+  if(!order)return null;
+  function saveStatus(){
+    db.ref(`orders/${order.key}`).update({status});
+    onClose();
+  }
+  return(
+    <div style={S.overlay} onClick={onClose}>
+      <div style={S.modal} onClick={e=>e.stopPropagation()}>
+        <div style={S.modalHead}>
+          <div style={S.modalTitle}>📋 {order.key?.slice(-6).toUpperCase()}</div>
+          <button style={S.closeBtn} onClick={onClose}>✕</button>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={S.modalRow}><span style={{color:"#888"}}>ลูกค้า</span><strong>{order.userName}</strong></div>
+          <div style={S.modalRow}><span style={{color:"#888"}}>วันที่สั่ง</span><span>{order.date}</span></div>
+          <div style={S.modalRow}><span style={{color:"#888"}}>สถานะ</span>
+            <select style={{...S.select,padding:"4px 8px"}} value={status} onChange={e=>setStatus(e.target.value)}>
+              {STATUSES.map(s=><option key={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{fontWeight:700,marginBottom:9,fontSize:13}}>รายการสินค้า</div>
+        {order.items&&order.items.map((it,i)=>(
+          <div key={i} style={S.orderItem}>
+            <span style={{fontSize:26}}>{it.image}</span>
+            <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13}}>{it.name}</div>
+              <div style={{fontSize:11,color:"#888"}}>{it.qty} ชิ้น × ฿{it.price?.toLocaleString()}</div></div>
+            <div style={{fontWeight:700,color:"#e94560"}}>฿{(it.qty*it.price)?.toLocaleString()}</div>
+          </div>
+        ))}
+        <div style={{...S.summaryTotal,marginTop:14,paddingTop:11}}>
+          <span>ยอดรวม</span><span style={{color:"#e94560"}}>฿{order.total?.toLocaleString()}</span>
+        </div>
+        <button style={{...S.primaryBtn,marginTop:14}} onClick={saveStatus}>💾 บันทึกสถานะ</button>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── ORDER HISTORY (Customer) ─────────────────────────────────────────────────
+function OrderHistory({user,onBack}){
+  const[orders,setOrders]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[selected,setSelected]=useState(null);
+
+  useEffect(()=>{
+    const uid=user.id||user.uid;
+    db.ref("orders").orderByChild("userId").equalTo(uid).on("value",snap=>{
+      const list=[];
+      snap.forEach(c=>list.unshift({...c.val(),key:c.key}));
+      setOrders(list);setLoading(false);
+    });
+    return()=>db.ref("orders").off();
+  },[]);
+
+  const totalSpent=orders.filter(o=>o.status!=="ยกเลิก").reduce((s,o)=>s+(o.total||0),0);
+
+  return(
+    <div style={{maxWidth:600,margin:"0 auto",padding:"20px 14px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button style={{...S.navBtn,fontSize:14}} onClick={onBack}>← กลับ</button>
+        <div style={{fontWeight:800,fontSize:20}}>📋 ประวัติการสั่งซื้อ</div>
+      </div>
+      {/* summary card */}
+      <div style={{background:"linear-gradient(135deg,#1a1a2e,#0f3460)",borderRadius:14,padding:"20px 22px",marginBottom:22,color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <div style={{fontSize:13,color:"#a0aec0",marginBottom:4}}>ยอดซื้อสะสมทั้งหมด</div>
+          <div style={{fontSize:28,fontWeight:800,color:"#f5a623"}}>฿{totalSpent.toLocaleString()}</div>
+          <div style={{fontSize:12,color:"#a0aec0",marginTop:4}}>{orders.length} ออเดอร์</div>
+        </div>
+        <div style={{fontSize:48}}>🏆</div>
+      </div>
+      {loading&&<div style={{textAlign:"center",padding:40,color:"#aaa"}}>กำลังโหลด...</div>}
+      {!loading&&orders.length===0&&<div style={{textAlign:"center",padding:40,color:"#aaa",background:"#fff",borderRadius:12,boxShadow:"0 2px 8px rgba(0,0,0,.07)"}}>
+        <div style={{fontSize:48,marginBottom:12}}>🛒</div>
+        <div>ยังไม่มีประวัติการสั่งซื้อ</div>
+      </div>}
+      {orders.map(o=>(
+        <div key={o.key} style={{background:"#fff",borderRadius:12,padding:"16px",marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,.07)",cursor:"pointer"}} onClick={()=>setSelected(selected?.key===o.key?null:o)}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:14}}>#{o.key?.slice(-6).toUpperCase()}</div>
+              <div style={{fontSize:12,color:"#888",marginTop:2}}>{o.date}</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontWeight:800,fontSize:16,color:"#e94560"}}>฿{o.total?.toLocaleString()}</div>
+              <span style={S.statusBadge(o.status)}>{o.status}</span>
+            </div>
+          </div>
+          {selected?.key===o.key&&<>
+            <div style={{borderTop:"1px solid #f5f5f5",paddingTop:10,marginTop:4}}>
+              {o.items&&o.items.map((it,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:9,padding:"6px 0",borderBottom:"1px solid #f9f9f9"}}>
+                  <span style={{fontSize:24}}>{it.image}</span>
+                  <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{it.name}</div>
+                    <div style={{fontSize:11,color:"#888"}}>{it.qty} ชิ้น × ฿{it.price?.toLocaleString()}</div></div>
+                  <div style={{fontWeight:700,color:"#e94560",fontSize:13}}>฿{(it.qty*it.price)?.toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+          </>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── ADMIN ────────────────────────────────────────────────────────────────────
+const PAGE_SIZE=20;
+function AdminView({products,setProducts}){
+  const[tab,setTab]=useState("orders");
+  const[orders,setOrders]=useState([]);
+  const[members,setMembers]=useState([]);
+  const[search,setSearch]=useState("");
+  const[statusFilter,setStatusFilter]=useState("ทั้งสถานะ");
+  const[selectedOrder,setSelectedOrder]=useState(null);
+  const[memberSearch,setMemberSearch]=useState("");
+  const[memberPage,setMemberPage]=useState(1);
+  const[orderPage,setOrderPage]=useState(1);
+  const[editing,setEditing]=useState({});
+  const[newP,setNewP]=useState({name:"",price:"",category:"",stock:"",image:"📦",desc:""});
+
+  // ── load orders realtime ──
+  useEffect(()=>{
+    const ref=db.ref("orders").orderByChild("createdAt");
+    ref.on("value",snap=>{
+      const list=[];
+      snap.forEach(c=>list.unshift({...c.val(),key:c.key}));
+      setOrders(list);
+    });
+    return()=>ref.off();
+  },[]);
+
+  // ── load members ──
+  useEffect(()=>{
+    db.ref("users").on("value",snap=>{
+      const list=[];
+      snap.forEach(c=>list.push({...c.val(),uid:c.key}));
+      setMembers(list);
+    });
+    return()=>db.ref("users").off();
+  },[]);
+
+  const filteredOrders=orders
+    .filter(o=>statusFilter==="ทั้งสถานะ"||o.status===statusFilter)
+    .filter(o=>(o.key||"").includes(search)||o.userName?.toLowerCase().includes(search.toLowerCase()));
+  const orderPages=Math.ceil(filteredOrders.length/PAGE_SIZE)||1;
+  const pagedOrders=filteredOrders.slice((orderPage-1)*PAGE_SIZE,orderPage*PAGE_SIZE);
+
+  const filteredMembers=members.filter(u=>u.name?.toLowerCase().includes(memberSearch.toLowerCase())||u.email?.toLowerCase().includes(memberSearch.toLowerCase()));
+  const memberPages=Math.ceil(filteredMembers.length/PAGE_SIZE)||1;
+  const pagedMembers=filteredMembers.slice((memberPage-1)*PAGE_SIZE,memberPage*PAGE_SIZE);
+
+  const totalRevenue=orders.filter(o=>o.status!=="ยกเลิก").reduce((s,o)=>s+(o.total||0),0);
+
+  function saveEdit(id){setProducts(prev=>prev.map(p=>p.id===id?{...p,...editing[id],price:Number(editing[id].price||p.price),stock:Number(editing[id].stock||p.stock)}:p));setEditing(v=>{const n={...v};delete n[id];return n;});}
+  function addProduct(){if(!newP.name||!newP.price)return;setProducts(prev=>[...prev,{...newP,id:Date.now(),price:Number(newP.price),stock:Number(newP.stock||0)}]);setNewP({name:"",price:"",category:"",stock:"",image:"📦",desc:""});}
+  function getMemberOrders(uid){return orders.filter(o=>o.userId===uid);}
+
+  return(
+    <div style={S.adminWrap}>
+      <div style={S.adminTitle}>⚙️ แผงควบคุมแอดมิน</div>
+      <div style={S.tabRow}>
+        {[["orders","📦 คำสั่งซื้อ"],["dashboard","📊 Dashboard"],["members","👥 สมาชิก"],["products","🏷️ สินค้า"]].map(([k,l])=>(
+          <button key={k} style={S.tab(tab===k)} onClick={()=>setTab(k)}>{l}</button>
+        ))}
+      </div>
+
+      {tab==="orders"&&<>
+        <div style={S.searchBar}>
+          <input style={S.searchInput} placeholder="🔍 ค้นหาชื่อลูกค้า..." value={search} onChange={e=>{setSearch(e.target.value);setOrderPage(1);}}/>
+          <select style={S.select} value={statusFilter} onChange={e=>{setStatusFilter(e.target.value);setOrderPage(1);}}>
+            <option>ทั้งสถานะ</option>{STATUSES.map(s=><option key={s}>{s}</option>)}
+          </select>
+          <span style={{fontSize:12,color:"#888"}}>ทั้งหมด {filteredOrders.length} รายการ</span>
+        </div>
+        {orders.length===0&&<div style={{textAlign:"center",padding:40,color:"#aaa",background:"#fff",borderRadius:12}}>
+          <div style={{fontSize:48,marginBottom:12}}>📭</div>
+          <div>ยังไม่มีคำสั่งซื้อ<br/>รอลูกค้าสั่งซื้อครับ</div>
+        </div>}
+        {orders.length>0&&<><div style={{overflowX:"auto"}}>
+          <table style={S.table}>
+            <thead><tr>{["เลขออเดอร์","ลูกค้า","วันที่","สินค้า","ยอดรวม","สถานะ",""].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {pagedOrders.length===0&&<tr><td colSpan={7} style={{...S.td,textAlign:"center",padding:28,color:"#aaa"}}>ไม่พบรายการ</td></tr>}
+              {pagedOrders.map(o=>(
+                <tr key={o.key}>
+                  <td style={S.td}><strong style={{color:"#3182ce",cursor:"pointer",fontSize:12}} onClick={()=>setSelectedOrder(o)}>#{o.key?.slice(-6).toUpperCase()}</strong></td>
+                  <td style={S.td}>{o.userName}</td>
+                  <td style={S.td}><span style={{whiteSpace:"nowrap",fontSize:12}}>{o.date}</span></td>
+                  <td style={S.td}>{o.items&&o.items.map((it,i)=><div key={i} style={{fontSize:12,whiteSpace:"nowrap"}}>{it.image} {it.name} ×{it.qty}</div>)}</td>
+                  <td style={S.td}><strong style={{color:"#e94560"}}>฿{o.total?.toLocaleString()}</strong></td>
+                  <td style={S.td}><span style={S.statusBadge(o.status)}>{o.status}</span></td>
+                  <td style={S.td}><button style={S.btn("#3182ce")} onClick={()=>setSelectedOrder(o)}>ดู</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={S.pageRow}>
+          <button style={S.pageBtn(false)} onClick={()=>setOrderPage(p=>Math.max(1,p-1))} disabled={orderPage===1}>‹</button>
+          {Array.from({length:Math.min(orderPages,7)},(_,i)=>{const p=orderPages<=7?i+1:orderPage<=4?i+1:orderPage>=orderPages-3?orderPages-6+i:orderPage-3+i;return<button key={p} style={S.pageBtn(p===orderPage)} onClick={()=>setOrderPage(p)}>{p}</button>;}).filter(Boolean)}
+          <button style={S.pageBtn(false)} onClick={()=>setOrderPage(p=>Math.min(orderPages,p+1))} disabled={orderPage===orderPages}>›</button>
+        </div></>}
+      </>}
+
+      {tab==="dashboard"&&<>
+        <div style={S.statGrid}>
+          {[[orders.length,"คำสั่งซื้อทั้งหมด","#e94560"],[`฿${totalRevenue.toLocaleString()}`,"รายได้รวม","#e94560",20],
+            [orders.filter(o=>o.status==="รอดำเนินการ").length,"รอดำเนินการ","#f5a623"],
+            [orders.filter(o=>o.status==="กำลังจัดส่ง").length,"กำลังจัดส่ง","#3182ce"],
+            [orders.filter(o=>o.status==="จัดส่งแล้ว").length,"จัดส่งแล้ว","#38a169"],
+            [members.length,"สมาชิก","#3182ce"],[products.length,"สินค้า","#e94560"]
+          ].map(([n,l,c,fs],i)=>(
+            <div key={i} style={S.statCard}><div style={{...S.statNum,color:c,fontSize:fs||26}}>{n}</div><div style={S.statLabel}>{l}</div></div>
+          ))}
+        </div>
+      </>}
+
+      {tab==="members"&&<>
+        <div style={S.searchBar}>
+          <input style={S.searchInput} placeholder="🔍 ค้นหาชื่อหรืออีเมล..." value={memberSearch} onChange={e=>{setMemberSearch(e.target.value);setMemberPage(1);}}/>
+          <span style={{fontSize:12,color:"#888"}}>ทั้งหมด {filteredMembers.length} คน</span>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={S.table}>
+            <thead><tr>{["#","ชื่อ","อีเมล","เบอร์โทร","วันสมัคร","ออเดอร์","ยอดรวม"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {pagedMembers.length===0&&<tr><td colSpan={7} style={{...S.td,textAlign:"center",padding:28,color:"#aaa"}}>ยังไม่มีสมาชิก</td></tr>}
+              {pagedMembers.map((u,i)=>{
+                const mo=getMemberOrders(u.uid),mt=mo.filter(o=>o.status!=="ยกเลิก").reduce((s,o)=>s+(o.total||0),0);
+                return(<tr key={u.uid}>
+                  <td style={S.td}>{(memberPage-1)*PAGE_SIZE+i+1}</td>
+                  <td style={S.td}><strong>{u.name}</strong></td>
+                  <td style={S.td}><span style={{fontSize:12,color:"#555"}}>{u.email}</span></td>
+                  <td style={S.td}>{u.phone||"-"}</td>
+                  <td style={S.td}>{u.joinDate||"-"}</td>
+                  <td style={{...S.td,textAlign:"center"}}><span style={{fontWeight:700,color:"#3182ce"}}>{mo.length}</span></td>
+                  <td style={S.td}><strong style={{color:"#e94560"}}>฿{mt.toLocaleString()}</strong></td>
+                </tr>);
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={S.pageRow}>
+          <button style={S.pageBtn(false)} onClick={()=>setMemberPage(p=>Math.max(1,p-1))} disabled={memberPage===1}>‹</button>
+          {Array.from({length:Math.min(memberPages,7)},(_,i)=>{const p=memberPages<=7?i+1:memberPage<=4?i+1:memberPage>=memberPages-3?memberPages-6+i:memberPage-3+i;return<button key={p} style={S.pageBtn(p===memberPage)} onClick={()=>setMemberPage(p)}>{p}</button>;}).filter(Boolean)}
+          <button style={S.pageBtn(false)} onClick={()=>setMemberPage(p=>Math.min(memberPages,p+1))} disabled={memberPage===memberPages}>›</button>
+        </div>
+      </>}
+
+      {tab==="products"&&<>
+        <div style={{background:"#fff",borderRadius:11,padding:17,marginBottom:20,boxShadow:"0 2px 8px rgba(0,0,0,.07)"}}>
+          <div style={{fontWeight:700,marginBottom:12,fontSize:14}}>➕ เพิ่มสินค้าใหม่</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+            {[["name","ชื่อสินค้า",130],["price","ราคา",72],["category","หมวดหมู่",95],["stock","สต็อก",64],["image","Emoji",56],["desc","คำอธิบาย",170]].map(([k,ph,w])=>(
+              <input key={k} style={{...S.input,width:w,marginBottom:0}} placeholder={ph} value={newP[k]} onChange={e=>setNewP(p=>({...p,[k]:e.target.value}))}/>
+            ))}
+            <button style={S.btn("#e94560")} onClick={addProduct}>เพิ่มสินค้า</button>
+          </div>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={S.table}>
+            <thead><tr>{["#","สินค้า","หมวดหมู่","ราคา","สต็อก","จัดการ"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+            <tbody>{products.map(p=>{const ed=editing[p.id];return(
+              <tr key={p.id}>
+                <td style={S.td}>{p.image}</td>
+                <td style={S.td}><strong>{p.name}</strong><br/><span style={{color:"#999",fontSize:11}}>{p.desc}</span></td>
+                <td style={S.td}>{p.category}</td>
+                <td style={S.td}>{ed?<input style={{padding:"5px 7px",borderRadius:6,border:"1.5px solid #ddd",width:74,fontSize:12,fontFamily:"inherit"}} value={ed.price??p.price} onChange={e=>setEditing(v=>({...v,[p.id]:{...v[p.id],price:e.target.value}}))}/>:`฿${p.price.toLocaleString()}`}</td>
+                <td style={S.td}>{ed?<input style={{padding:"5px 7px",borderRadius:6,border:"1.5px solid #ddd",width:74,fontSize:12,fontFamily:"inherit"}} value={ed.stock??p.stock} onChange={e=>setEditing(v=>({...v,[p.id]:{...v[p.id],stock:e.target.value}}))}/>:<span style={S.stockBadge(p.stock>0)}>{p.stock}</span>}</td>
+                <td style={S.td}>{ed?<><button style={S.btn("#38a169")} onClick={()=>saveEdit(p.id)}>บันทึก</button><button style={S.btn("#718096")} onClick={()=>setEditing(v=>{const n={...v};delete n[p.id];return n;})}>ยกเลิก</button></>:<><button style={S.btn("#3182ce")} onClick={()=>setEditing(v=>({...v,[p.id]:{price:p.price,stock:p.stock}}))}>แก้ไข</button><button style={S.btn("#e53e3e")} onClick={()=>setProducts(prev=>prev.filter(x=>x.id!==p.id))}>ลบ</button></>}</td>
+              </tr>);})}
+            </tbody>
+          </table>
+        </div>
+      </>}
+
+      <OrderModal order={selectedOrder} onClose={()=>setSelectedOrder(null)}/>
+    </div>
+  );
+}
+
+// ─── APP ROOT ─────────────────────────────────────────────────────────────────
+function App(){
+  const[user,setUser]=useState(null);
+  const[products,setProducts]=useState(INITIAL_PRODUCTS);
+  const[cart,dispatch]=useReducer(cartReducer,[]);
+  const[cartOpen,setCartOpen]=useState(false);
+  const[view,setView]=useState("shop");
+  const[newOrderCount,setNewOrderCount]=useState(0);
+  const[totalSpent,setTotalSpent]=useState(0);
+
+  // load customer total spent
+  useEffect(()=>{
+    if(!user||user.role!=="customer")return;
+    const uid=user.id||user.uid;
+    const ref=db.ref("orders").orderByChild("userId").equalTo(uid);
+    ref.on("value",snap=>{
+      let t=0;snap.forEach(c=>{const o=c.val();if(o.status!=="ยกเลิก")t+=o.total||0;});
+      setTotalSpent(t);
+    });
+    return()=>ref.off();
+  },[user]);
+
+  if(!user)return <AuthPage onLogin={u=>{setUser(u);setView("shop");}}/>;
+  const cartCount=cart.reduce((s,i)=>s+i.qty,0);
+
+  return(
+    <div style={S.app}>
+      <Navbar user={user} cartCount={cartCount}
+        onCartToggle={()=>setCartOpen(o=>!o)}
+        onLogout={()=>{setUser(null);dispatch({type:"CLEAR"});setCartOpen(false);setView("shop");}}
+        onGoAdmin={()=>{setView("admin");setNewOrderCount(0);}}
+        onGoShop={()=>setView("shop")}
+        onGoHistory={()=>setView("history")}
+        view={view} newOrders={newOrderCount} totalSpent={totalSpent}/>
+      {view==="shop"&&<ShopView products={products} cart={cart} dispatch={dispatch} cartOpen={cartOpen} setCartOpen={setCartOpen} user={user}
+          onOrderPlaced={()=>{if(user.role==="admin")setNewOrderCount(n=>n+1);}}/>}
+      {view==="admin"&&<AdminView products={products} setProducts={setProducts}/>}
+      {view==="history"&&<OrderHistory user={user} onBack={()=>setView("shop")}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
